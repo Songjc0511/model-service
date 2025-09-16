@@ -4,6 +4,7 @@ from loguru import logger
 
 from model_service.conf.env import settings
 
+
 if __name__ == "__main__":
     load_dotenv()
     logger.info(f"current env: {settings.ENV}")

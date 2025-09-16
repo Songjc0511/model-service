@@ -1,9 +1,9 @@
 from faster_whisper import WhisperModel
 import os
 from model_service.conf.settings import settings
-
+import base64
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-
+from uuid import uuid4
 # 全局模型变量
 model = None
 
@@ -23,14 +23,18 @@ def load_model():
 if settings.LOAD_MODEL:
     load_model()
 
-def transcribe():
+def transcribe(json_data):
     """转录音频文件"""
     if not settings.LOAD_MODEL or model is None:
         print("模型未加载，无法进行转录")
         return None
-        
-    segments, info = model.transcribe("audio.wav", beam_size=5, language="zh", initial_prompt="这是一段简体中文的音频")
-
+    audio_data = json_data["data"]
+    audio_data = base64.b64decode(audio_data)
+    audio_path = f"{uuid4()}.wav"
+    with open(audio_path, "wb") as f:
+        f.write(audio_data)
+    segments, info = model.transcribe(audio_path, beam_size=5, language="zh", initial_prompt="这是一段简体中文的音频")
+    os.remove(audio_path)
     print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
     text = ""
     for segment in segments:
