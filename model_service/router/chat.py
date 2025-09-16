@@ -4,6 +4,7 @@ import json
 from model_service.service.audio.process_audio import transcribe, check_wake_word
 from model_service.middleware.auth import auth_middleware
 from model_service.service.chat_service import chat_service
+from model_service.service.model_service import model_service
 from model_service.dto.chat import WebSocketMessage, Conversation, ChatMessage
 from typing import List, Optional
 
@@ -19,11 +20,16 @@ async def websocket_chat(websocket: WebSocket):
         user_info = auth_middleware.extract_user_info_from_websocket(websocket)
         user_id = user_info["user_id"]
         conversation_id = user_info["conversation_id"]
+        model_name = user_info["model"]
         
         # 验证用户
         if not auth_middleware.validate_user(user_id):
             await websocket.close(code=1008, reason="用户验证失败")
             return
+        
+        # 先接受WebSocket连接
+        await websocket.accept()
+        logger.info(f"WebSocket连接已建立 - 用户: {user_id}")
         
         # 获取或创建对话
         if not conversation_id:
@@ -36,8 +42,7 @@ async def websocket_chat(websocket: WebSocket):
         else:
             conversation_id = chat_service.get_or_create_conversation(user_id, conversation_id)
         
-        await websocket.accept()
-        logger.info(f"WebSocket连接已建立 - 用户: {user_id}, 对话: {conversation_id}")
+        logger.info(f"对话ID: {conversation_id}")
         
         # 存储连接信息
         active_connections[websocket] = {
@@ -47,6 +52,7 @@ async def websocket_chat(websocket: WebSocket):
         
         # 发送历史消息
         history = chat_service.get_conversation_messages(user_id, conversation_id, limit=10)
+        # print(f"历史消息: {history}")
         if history:
             await websocket.send_text(json.dumps({
                 "type": "history",
@@ -115,20 +121,88 @@ async def websocket_chat(websocket: WebSocket):
 
             elif json_data["type"] == "text":
                 text = json_data["data"]
+                
+                # 检查模型是否支持
+                if not model_service.is_model_supported(model_name):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": f"不支持的模型: {model_name}",
+                        "available_models": list(model_service.get_available_models().keys())
+                    }))
+                    continue
+                
+                # 发送确认消息
                 await websocket.send_text(json.dumps({
                     "type": "text_received",
-                    "text": text
+                    "text": text,
+                    "model": model_name
                 }))
                 
-                # 保存文本消息
+                # 保存用户文本消息
                 chat_service.save_message(
                     user_id=user_id,
                     conversation_id=conversation_id,
                     message_type="text",
                     content=text,
-                    is_user_message=False
+                    is_user_message=True
                 )
-            
+                
+                # 调用模型处理
+                try:
+                    # 构建消息历史
+                    history_messages = chat_service.get_conversation_messages(user_id, conversation_id, limit=10)
+                    messages = []
+                    
+                    # 添加系统消息
+                    messages.append({
+                        "role": "system",
+                        "content": "你是一个有用的AI助手，请用中文回答用户的问题。"
+                    })
+                    
+                    # 添加历史消息
+                    for msg in history_messages:
+                        if msg.message_type in ["text", "transcription", "model_response"]:
+                            role = "user" if msg.is_user_message else "assistant"
+                            messages.append({
+                                "role": role,
+                                "content": msg.content
+                            })
+                    
+                    # 调用流式模型
+                    full_response = ""
+                    async for chunk in model_service.process_chat_stream(model_name, messages):
+                        if chunk:
+                            # 发送流式响应
+                            await websocket.send_text(json.dumps({
+                                "type": "model_stream",
+                                "text": chunk,
+                                "model": model_name
+                            }))
+                            full_response += chunk
+                    
+                    # 发送流式结束信号
+                    await websocket.send_text(json.dumps({
+                        "type": "model_stream_end",
+                        "model": model_name
+                    }, ensure_ascii=False))
+                    
+                    # 保存完整模型响应
+                    if full_response:
+                        chat_service.save_message(
+                            user_id=user_id,
+                            conversation_id=conversation_id,
+                            message_type="model_response",
+                            content=full_response,
+                            is_user_message=False
+                        )
+                            
+                except Exception as e:
+                    logger.error(f"模型调用失败: {e}")
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": f"模型调用失败: {str(e)}"
+                    }))
+            print(f"history: {history}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket连接已断开 - 用户: {user_id}")
         if websocket in active_connections:
@@ -201,10 +275,27 @@ async def close_conversation(request: Request, conversation_id: str):
         raise HTTPException(status_code=500, detail="关闭对话失败")
 
 
+@voice_router.get("/models")
+async def get_available_models():
+    """获取可用的模型列表"""
+    return model_service.get_model_list_response()
+
+@voice_router.get("/models/{model_name}")
+async def get_model_info(model_name: str):
+    """获取特定模型信息"""
+    model_info = model_service.get_model_info(model_name)
+    if not model_info:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    return {
+        "model": model_name,
+        "info": model_info
+    }
+
 @voice_router.get("/health")
 async def health_check():
     """健康检查"""
     return {
         "status": "healthy",
-        "active_connections": len(active_connections)
+        "active_connections": len(active_connections),
+        "available_models": len(model_service.get_available_models())
     }

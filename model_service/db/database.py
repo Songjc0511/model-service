@@ -6,15 +6,24 @@ from model_service.db.models import Base
 import os
 
 # 数据库URL配置
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chat_service.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://langchain:langchain@localhost:8001/langchain")
 
 # 创建数据库引擎
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    poolclass=StaticPool if "sqlite" in DATABASE_URL else None,
-    echo=False
-)
+if "postgresql" in DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True,  # 自动重连
+        pool_recycle=300,    # 连接回收时间
+    )
+else:
+    # SQLite配置
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+        poolclass=StaticPool if "sqlite" in DATABASE_URL else None,
+        echo=False
+    )
 
 # 创建会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

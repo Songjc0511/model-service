@@ -4,6 +4,7 @@ from loguru import logger
 
 from model_service.conf.settings import settings
 from model_service.router.chat import voice_router
+from model_service.router.user import user_router
 from model_service.db.database import create_tables
 
 # 创建FastAPI应用实例
@@ -24,6 +25,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(voice_router, prefix="/api/v1")
+app.include_router(user_router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def startup_event():

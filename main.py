@@ -11,7 +11,7 @@ if __name__ == "__main__":
     port = 8000
     logger.info(f"Server will be available at: http://localhost:{port}")
     is_dev = settings.ENV == "dev"
-    reload_excludes = ["tests", "tests/*", "tests/**/*"]
+    reload_excludes = ["tests", "tests/*", "tests/**/*, test_*"]
     uvicorn.run(
         "model_service.app:app",
         host="0.0.0.0",

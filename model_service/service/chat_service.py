@@ -3,6 +3,7 @@ from sqlalchemy import desc
 from model_service.db.database import get_db_session
 from model_service.db.models import Conversation, ChatMessage, User
 from model_service.dto.chat import ChatMessage as ChatMessageDTO, Conversation as ConversationDTO
+from model_service.service.user_service import user_service
 from typing import List, Optional
 from datetime import datetime
 from uuid import uuid4
@@ -25,6 +26,11 @@ class ChatService:
         
         self.db.add(conversation)
         self.db.commit()
+        
+        # 更新用户统计
+        user_service.increment_user_stats(user_id, conversation_count=1)
+        user_service.update_user_activity(user_id)
+        
         logger.info(f"为用户 {user_id} 创建新对话: {conversation_id}")
         return conversation_id
     
@@ -90,6 +96,11 @@ class ChatService:
             conversation.updated_at = datetime.now()
         
         self.db.commit()
+        
+        # 更新用户统计
+        user_service.increment_user_stats(user_id, message_count=1)
+        user_service.update_user_activity(user_id)
+        
         logger.info(f"保存消息: {message_id} 到对话: {conversation_id}")
         return message_id
     
