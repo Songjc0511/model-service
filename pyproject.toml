@@ -1,0 +1,21 @@
+[project]
+name = "modle-service"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "sjc",email = "317897874@qq.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi (>=0.116.1,<0.117.0)",
+    "langchain (>=0.3.27,<0.4.0)",
+    "langchain-community (>=0.3.29,<0.4.0)",
+    "loguru (>=0.7.3,<0.8.0)",
+    "dotenv (>=0.9.9,<0.10.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
